@@ -255,11 +255,19 @@ class XRK():
 
     def timetodistance(self, itime: float):
         '''Convert an absolute time in seconds to an absolute distance (m)'''
-        idx = bisect.bisect_left(self.timedistance[0], itime)
-        if (self.timedistance[0][idx] != itime):
-            # XXX if this becomes an issue, could interpolate I guess?
-            print(f"Warning: timedistance {itime}, closest {self.timedistance[0][idx]}")
-        return self.timedistance[1][idx]
+        times, distances = self.timedistance
+        idx = bisect.bisect_left(times, itime)
+
+        if times[idx] == itime or idx == len(times) - 1:
+            # easy, we have the time in question
+            # (or we're going to walk off the end of the list)
+            return distances[idx]
+        else:
+            # No data point ... going to have to interpolate
+            ratio = ((itime - times[idx]) /
+                     (times[idx+1] - times[idx]))
+            fudge = (distances[idx+1] - distances[idx]) * ratio
+            return round(distances[idx]+fudge, 4)
 
     @functools.cached_property
     def lap_info(self) -> list[tuple[float, float]]:
@@ -269,6 +277,6 @@ class XRK():
         data = []
         for i in range(self.lapcount):
             XRKDLL.get_lap_info(self.idxf, i, byref(pstart), byref(pduration))
-            data.append((round(pstart.value, 3), round(pduration.value, 3)))
+            data.append((round(pstart.value, 4), round(pduration.value, 4)))
 
         return data
