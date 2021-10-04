@@ -62,7 +62,7 @@ class XRKChannel():
         return f"{self.__class__.__name__}(name='{self.name}', idxf={self.idxf}, idxc={self.idxc})"
 
     def units(self):
-        return self.f_get_channel_units(self.idxf, self.idxc)
+        return self.f_get_channel_units(self.idxf, self.idxc).decode('UTF-8')
 
     def samples(self, lap=None):
         sample_count = self.f_get_channel_samples_count(self.idxf, self.idxc)
@@ -226,7 +226,7 @@ class XRK():
         data = []
         for i in range(self.lapcount):
             XRKDLL.get_lap_info(self.idxf, i, byref(pstart), byref(pduration))
-            data.append((pstart.value, pduration.value))
+            data.append((round(pstart.value, 3), round(pduration.value, 3)))
 
         return data
 
