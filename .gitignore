@@ -1,6 +1,9 @@
 # vim files
 .*.sw*
 
+# AiM's DLL shits out .tmp files while reading
+*.tmp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
