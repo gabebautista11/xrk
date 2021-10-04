@@ -48,10 +48,11 @@ XRKDLL.get_GPS_raw_channel_units.restype = c_char_p
 
 # Data channel class
 class XRKChannel():
-    def __init__(self, name: str, idxf: int, idxc: int):
+    def __init__(self, name: str, idxf: int, idxc: int, xrk):
         self.name = name
         self.idxf = idxf
         self.idxc = idxc
+        self.xrk = xrk
         self.f_get_channel_units = XRKDLL.get_channel_units
         self.f_get_channel_samples_count = XRKDLL.get_channel_samples_count
         self.f_get_channel_samples = XRKDLL.get_channel_samples
@@ -64,14 +65,31 @@ class XRKChannel():
     def units(self):
         return self.f_get_channel_units(self.idxf, self.idxc).decode('UTF-8')
 
-    def samples(self, lap: int=None, xtime: bool=False):
+    def samples(self, lap: int=None, xtime: bool=False, xabsolute: bool=False):
+        '''Returns data samples for a channel.
+        Params:
+            lap: if you want a specific lap, give the integer here (0 offset)
+            xtime: xvalues in time in seconds (vs distance in meters)
+            xasolute: is x absolute since the start of session, or relative?
+
+        Returns:
+            Data points in columnar format: [[xvalues, ], [values]]
+        '''
+
+        # This function is ... messy. Sorry. Putting the complexity here
+        # contains it rather than sprinkling it around.
+        #
+        # Complexity dealt with in here:
+        # . retrieve lap vs whole data file
+        # . absolute or relative for the xvalues
+        # . time vs distance for xvalues
+
         sample_count = self.f_get_channel_samples_count(self.idxf, self.idxc)
         if lap:
             sample_count=self.f_get_lap_channel_samples_count(self.idxf, lap, self.idxc)
 
-        if sample_count < 0:
-            print(f"ERROR: get samples count returned {sample_count}")
-            return ((), ())
+        # going with assert here ... maybe a bad call and should handle this gracefully?
+        assert(sample_count > 0), f"get samples_count returned something unexpected {sample_count}"
 
         ptimes = (c_double * sample_count)()
         pvalues = (c_double * sample_count)()
@@ -86,28 +104,44 @@ class XRKChannel():
             success = self.f_get_channel_samples(self.idxf, self.idxc, byref(ptimes), 
                                                  byref(pvalues), sample_count)
 
-        times = []
+        # going with assert here ... maybe a bad call and should handle this gracefully?
+        assert(success > 0), f"get_channel_samples returned something unexpected {success}"
+
+        xvalues = [] # either times in seconds, or distance in meters
         samples = []
         for i in range(sample_count):
-            # Sigh. The timestamps for all samples are in milliseconds, but if
-            # you ask for a lap's worth of samples, it comes back with time in
-            # seconds. This blob does the multiply munge on the returned data.
-            #
-            # The call to round( , 4) is to unmunge some of the fractional
-            # seconds as they come back from the DLL
+            # The timestamps for all samples are in milliseconds, but if
+            # you ask for a lap's worth of samples with the lap function, it
+            # comes back with time in seconds. This blob does the multiply
+            # munge on the returned data.
             if not lap:
-                times.append(round(ptimes[i]/1000.0, 4))
+                ptime = round(ptimes[i]/1000.0, 4)
             else:
-                times.append(round(ptimes[i], 4))
+                ptime = round(ptimes[i], 4)
+            # If dealing in distance instead of time, convert to distance here
+            if not xtime:
+                ptime = self.xrk.timetodistance(ptime)
+
+            xvalues.append(ptime)
             samples.append(pvalues[i])
 
-        return [times, samples]
+        # If not xabsolute, convert xvalues to relative by subtracting the start
+        if not xabsolute and lap:
+            # grab the lap start to subtract
+            lap_start, lap_duration = self.xrk.lap_info[lap]
+            # and if not dealing in time ... convert start to distance ;)
+            if not xtime:
+                lap_start = self.xrk.timetodistance(lap_start)
+
+            xvalues = [x - lap_start for x in xvalues]
+
+        return [xvalues, samples]
 
 
 # Function pointer swizzles of generic XRKChannel
 class XRKGPSChannel(XRKChannel):
-    def __init__(self, name: str, idxf: int, idxc: int):
-        super().__init__(name, idxf, idxc)
+    def __init__(self, name: str, idxf: int, idxc: int, xrk):
+        super().__init__(name, idxf, idxc, xrk)
         self.f_get_channel_units = XRKDLL.get_GPS_channel_units
         self.f_get_channel_samples_count = XRKDLL.get_GPS_channel_samples_count
         self.f_get_channel_samples = XRKDLL.get_GPS_channel_samples
@@ -117,8 +151,8 @@ class XRKGPSChannel(XRKChannel):
 
 # Function pointer swizzles of generic XRKChannel
 class XRKGPSrawChannel(XRKChannel):
-    def __init__(self, name: str, idxf: int, idxc: int):
-        super().__init__(name, idxf, idxc)
+    def __init__(self, name: str, idxf: int, idxc: int, xrk):
+        super().__init__(name, idxf, idxc, xrk)
         self.f_get_channel_units = XRKDLL.get_GPS_raw_channel_units
         self.f_get_channel_samples_count = XRKDLL.get_GPS_raw_channel_samples_count
         self.f_get_channel_samples = XRKDLL.get_GPS_raw_channel_samples
@@ -181,17 +215,17 @@ class XRK():
         for i in range(XRKDLL.get_channels_count(self.idxf)):
             name = XRKDLL.get_channel_name(self.idxf, i).decode('UTF-8')
             assert(name not in channels), "channel name collision!"
-            channels[name] = XRKChannel(name, self.idxf, i)
+            channels[name] = XRKChannel(name, self.idxf, i, self)
 
         for i in range(XRKDLL.get_GPS_channels_count(self.idxf)):
             name = XRKDLL.get_GPS_channel_name(self.idxf, i).decode('UTF-8')
             assert(name not in channels), "channel name collision!"
-            channels[name] = XRKGPSChannel(name, self.idxf, i)
+            channels[name] = XRKGPSChannel(name, self.idxf, i, self)
 
         for i in range(XRKDLL.get_GPS_raw_channels_count(self.idxf)):
             name = XRKDLL.get_GPS_raw_channel_name(self.idxf, i).decode('UTF-8')
             assert(name not in channels), "channel name collision!"
-            channels[name] = XRKGPSrawChannel(name, self.idxf, i)
+            channels[name] = XRKGPSrawChannel(name, self.idxf, i, self)
 
         return channels
 
@@ -204,7 +238,8 @@ class XRK():
             2 lists: absolute time, corresponding absolute distance
             [[time, ], [distance, ]]
         '''
-        seconds, speeds = self.channels['GPS Speed'].samples()
+        # XXX MUST set xabsolute and xtime or we recurse using the data we're calculating XXX
+        seconds, speeds = self.channels['GPS Speed'].samples(xabsolute=True, xtime=True)
         assert(len(seconds) == len(speeds)) # paranoia
 
         # distance is in m/s
@@ -218,6 +253,14 @@ class XRK():
 
         return (seconds, distance)
 
+    def timetodistance(self, itime: float):
+        '''Convert an absolute time in seconds to an absolute distance (m)'''
+        idx = bisect.bisect_left(self.timedistance[0], itime)
+        if (self.timedistance[0][idx] != itime):
+            # XXX if this becomes an issue, could interpolate I guess?
+            print(f"Warning: timedistance {itime}, closest {self.timedistance[0][idx]}")
+        return self.timedistance[1][idx]
+
     @functools.cached_property
     def lap_info(self) -> list[tuple[float, float]]:
         pstart = c_double(0)
@@ -229,16 +272,3 @@ class XRK():
             data.append((round(pstart.value, 3), round(pduration.value, 3)))
 
         return data
-
-def convert_time_to_distance(seconds: list[float], \
-                             timedistance: list[list[float]]) \
-                             -> list[float]:
-    """convert a list of seconds into a list of distances"""
-    distances = []
-    for second in seconds:
-        idx = bisect.bisect_left(timedistance[0], second)
-        if (second != timedistance[0][idx]):
-            print(f"WARNING: couldn't find value {second}, closest was {timedistance[0][idx]}")
-        distances.append(timedistance[1][idx])
-
-    return distances

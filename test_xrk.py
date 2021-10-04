@@ -26,7 +26,7 @@ class XrkTest(unittest.TestCase):
         foundchanneldata = {}
         # Make sure the samples in each one look OK
         for name, channel in self.xrk.channels.items():
-            samples = channel.samples()
+            samples = channel.samples(xtime=True)
             # assert that we get back a tuple ([], [])
             self.assertEqual(len(samples), 2)
             # and that there's times and values that line up
@@ -69,7 +69,6 @@ class XrkTest(unittest.TestCase):
             'ECEF velocity_Z': (4747, 'm/s'),
             'N Satellites': (4747, '#'),
         }
-
         self.assertDictEqual(channeldata, foundchanneldata)
                 
     def testLapInfo(self):
@@ -89,7 +88,7 @@ class XrkTest(unittest.TestCase):
         for i in range(1, len(self.xrk.lap_info)):
             lap = self.xrk.lap_info[i]
             start, duration = lap
-            samples = self.xrk.channels['AccelerometerX'].samples(lap=i)
+            samples = self.xrk.channels['AccelerometerX'].samples(lap=i, xtime=True, xabsolute=True)
 
             # TBH I'm just tweaking rel_tol to pass ... so bleh
             self.assertTrue(math.isclose(samples[0][0], start, rel_tol=0.003))
