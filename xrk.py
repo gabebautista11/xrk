@@ -48,7 +48,7 @@ XRKDLL.get_GPS_raw_channel_units.restype = c_char_p
 
 # Data channel class
 class XRKChannel():
-    def __init__(self, name, idxf, idxc):
+    def __init__(self, name: str, idxf: int, idxc: int):
         self.name = name
         self.idxf = idxf
         self.idxc = idxc
@@ -58,13 +58,13 @@ class XRKChannel():
         self.f_get_lap_channel_samples_count = XRKDLL.get_lap_channel_samples_count
         self.f_get_lap_channel_samples = XRKDLL.get_lap_channel_samples
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name='{self.name}', idxf={self.idxf}, idxc={self.idxc})"
 
     def units(self):
         return self.f_get_channel_units(self.idxf, self.idxc).decode('UTF-8')
 
-    def samples(self, lap=None):
+    def samples(self, lap: int=None, xtime: bool=False):
         sample_count = self.f_get_channel_samples_count(self.idxf, self.idxc)
         if lap:
             sample_count=self.f_get_lap_channel_samples_count(self.idxf, lap, self.idxc)
@@ -104,36 +104,30 @@ class XRKChannel():
         return [times, samples]
 
 
-# These are the same as XRKChannel, just swizzle the function pointers to call
-# the appropriate functions
+# Function pointer swizzles of generic XRKChannel
 class XRKGPSChannel(XRKChannel):
-    def __init__(self, name, idxf, idxc):
-        self.name = name
-        self.idxf = idxf
-        self.idxc = idxc
+    def __init__(self, name: str, idxf: int, idxc: int):
+        super().__init__(name, idxf, idxc)
         self.f_get_channel_units = XRKDLL.get_GPS_channel_units
         self.f_get_channel_samples_count = XRKDLL.get_GPS_channel_samples_count
         self.f_get_channel_samples = XRKDLL.get_GPS_channel_samples
         self.f_get_lap_channel_samples_count = XRKDLL.get_lap_GPS_channel_samples_count
         self.f_get_lap_channel_samples = XRKDLL.get_lap_GPS_channel_samples
-    # rest comes from generic parent
 
 
+# Function pointer swizzles of generic XRKChannel
 class XRKGPSrawChannel(XRKChannel):
-    def __init__(self, name, idxf, idxc):
-        self.name = name
-        self.idxf = idxf
-        self.idxc = idxc
+    def __init__(self, name: str, idxf: int, idxc: int):
+        super().__init__(name, idxf, idxc)
         self.f_get_channel_units = XRKDLL.get_GPS_raw_channel_units
         self.f_get_channel_samples_count = XRKDLL.get_GPS_raw_channel_samples_count
         self.f_get_channel_samples = XRKDLL.get_GPS_raw_channel_samples
         self.f_get_lap_channel_samples_count = XRKDLL.get_lap_GPS_raw_channel_samples_count
         self.f_get_lap_channel_samples = XRKDLL.get_lap_GPS_raw_channel_samples
-    # rest comes from generic parent
 
 
 class XRK():
-    def __init__(self, filename):
+    def __init__(self, filename: str):
         self.filename = filename
         fileptr = c_char_p(os.path.abspath(f'{filename}').encode())
         self.idxf = XRKDLL.open_file(fileptr.value)
@@ -150,27 +144,27 @@ class XRK():
                 f"championship_name={self.championship_name})")
 
     @functools.cached_property
-    def vehicle_name(self):
+    def vehicle_name(self) -> str:
         return XRKDLL.get_vehicle_name(self.idxf).decode('UTF-8')
 
     @functools.cached_property
-    def track_name(self):
+    def track_name(self) -> str:
         return XRKDLL.get_track_name(self.idxf).decode('UTF-8')
 
     @functools.cached_property
-    def racer_name(self):
+    def racer_name(self) -> str:
         return XRKDLL.get_racer_name(self.idxf).decode('UTF-8')
 
     @functools.cached_property
-    def championship_name(self):
+    def championship_name(self) -> str:
         return XRKDLL.get_championship_name(self.idxf).decode('UTF-8')
 
     @functools.cached_property
-    def venue_type(self):
+    def venue_type(self) -> str:
         return XRKDLL.get_venue_type_name(self.idxf).decode('UTF-8')
 
     @functools.cached_property
-    def datetime(self):
+    def datetime(self) -> str:
         # returns a pointer, so we grab the 1st (only) one
         t = XRKDLL.get_date_and_time(self.idxf)[0]
         mktime = time.mktime((t.tm_year+1900, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min,
@@ -178,11 +172,11 @@ class XRK():
         return datetime.datetime.fromtimestamp(mktime).strftime("%Y-%m-%d %H:%M:%S")
 
     @functools.cached_property
-    def lapcount(self):
+    def lapcount(self) -> int:
         return XRKDLL.get_laps_count(self.idxf)
 
     @functools.cached_property
-    def channels(self):
+    def channels(self) -> dict:
         channels = {}
         for i in range(XRKDLL.get_channels_count(self.idxf)):
             name = XRKDLL.get_channel_name(self.idxf, i).decode('UTF-8')
@@ -202,8 +196,14 @@ class XRK():
         return channels
 
     @functools.cached_property
-    def timedistance(self):
-        '''compute the time distance vector using GPS Speed'''
+    def timedistance(self) -> tuple[list[int], list[int]]:
+        '''Compute the time distance vector for the entire datafile using GPS
+        Speed
+
+        Returns:
+            2 lists: absolute time, corresponding absolute distance
+            [[time, ], [distance, ]]
+        '''
         seconds, speeds = self.channels['GPS Speed'].samples()
         assert(len(seconds) == len(speeds)) # paranoia
 
@@ -219,7 +219,7 @@ class XRK():
         return (seconds, distance)
 
     @functools.cached_property
-    def lap_info(self):
+    def lap_info(self) -> list[tuple[float, float]]:
         pstart = c_double(0)
         pduration = c_double(0)
 
@@ -230,7 +230,9 @@ class XRK():
 
         return data
 
-def convert_time_to_distance(seconds, timedistance):
+def convert_time_to_distance(seconds: list[float], \
+                             timedistance: list[list[float]]) \
+                             -> list[float]:
     """convert a list of seconds into a list of distances"""
     distances = []
     for second in seconds:
