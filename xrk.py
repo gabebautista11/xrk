@@ -253,21 +253,38 @@ class XRK():
 
         return (seconds, distance)
 
-    def timetodistance(self, itime: float):
-        '''Convert an absolute time in seconds to an absolute distance (m)'''
-        times, distances = self.timedistance
-        idx = bisect.bisect_left(times, itime)
 
-        if times[idx] == itime or idx == len(times) - 1:
-            # easy, we have the time in question
-            # (or we're going to walk off the end of the list)
-            return distances[idx]
+    def _tdlookup(self, needle, haystack, cdata):
+        '''Generic lookup for the timedistance pair of lists.
+
+        This will find a point in one stream, and return the corresponding data
+        point in the other, including interpolating when necessary.
+        '''
+        idx = bisect.bisect_left(haystack, needle)
+        if idx >= len(haystack):
+            return cdata[-1]
+        elif haystack[idx] == needle:
+            # easy, found the needle, just return the data
+            return cdata[idx]
         else:
-            # No data point ... going to have to interpolate
-            ratio = ((itime - times[idx]) /
-                     (times[idx+1] - times[idx]))
-            fudge = (distances[idx+1] - distances[idx]) * ratio
-            return round(distances[idx]+fudge, 4)
+            # non-easy case, interpolate
+            try:
+                ratio = ((needle - haystack[idx]) / 
+                         (haystack[idx+1] - haystack[idx]))
+            except ZeroDivisionError:
+                ratio = 1
+            fudge = (cdata[idx+1] - cdata[idx]) * ratio
+            return round(cdata[idx]+fudge, 4)
+
+    def timetodistance(self, itime: float):
+        '''Convert an absolute time (s) to absolute distance (m)'''
+        times, distances = self.timedistance
+        return self._tdlookup(itime, times, distances)
+
+    def distancetotime(self, idistance: float):
+        '''Convert an absolute distance (m) to absolute time (s)'''
+        times, distances = self.timedistance
+        return self._tdlookup(idistance, distances, times)
 
     @functools.cached_property
     def lap_info(self) -> list[tuple[float, float]]:

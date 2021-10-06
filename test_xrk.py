@@ -94,6 +94,14 @@ class XrkTest(unittest.TestCase):
             self.assertTrue(math.isclose(samples[0][0], start, rel_tol=0.003))
             self.assertTrue(math.isclose(samples[0][-1] - samples[0][0], duration, rel_tol=0.003))
 
+    def testTdLookup(self):
+        # for each lap time, grab the time and ask for the distance, then ask
+        # for that disance and make sure we get the time back
+        for starttime, duration in self.xrk.lap_info:
+            distance = self.xrk.timetodistance(starttime)
+            gtime = self.xrk.distancetotime(distance)
+            self.assertEqual(gtime, starttime)
+
 
 if __name__ == '__main__':
     unittest.main() 
