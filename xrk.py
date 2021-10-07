@@ -12,6 +12,7 @@ import datetime
 import functools
 import os
 import time
+import textwrap
 
 DLLNAME = os.path.join(os.path.dirname(__file__), 'MatLabXRK-2017-64-ReleaseU.dll')
 XRKDLL = cdll.LoadLibrary(DLLNAME)
@@ -176,6 +177,32 @@ class XRK():
                 f"vehicle_name={self.vehicle_name}, "
                 f"track_name={self.track_name}, racer_name={self.racer_name}, "
                 f"championship_name={self.championship_name})")
+
+
+    def summary(self) -> str:
+        text = [textwrap.dedent(f'''\
+            Track: {self.track_name}
+            Date: {self.datetime}
+            Driver: {self.racer_name}
+            Vehicle: {self.vehicle_name}
+            Championship: {self.championship_name}
+            Laps: {self.lapcount}
+            '''),]
+        for i in range(len(self.lap_info)):
+            m, s = divmod(self.lap_info[i][1], 60)
+            if i == self.bestlap:
+                text.append(f'*{i}*\t*{m:.0f}:{s:.3f}*\n')
+            else:
+                text.append(f' {i} \t {m:.0f}:{s:.3f}\n')
+        return ''.join(text)
+
+    @functools.cached_property
+    def bestlap(self) -> int:
+        bestlap = 0
+        for i in range(len(self.lap_info)):
+            if self.lap_info[i][1] < self.lap_info[bestlap][1]:
+                bestlap=i
+        return bestlap
 
     @functools.cached_property
     def vehicle_name(self) -> str:
