@@ -9,8 +9,8 @@ I don't use Matlab, but I can slap together Python, so here we are. This
 repository contains a Python wrapper for the AiM provided DLL.
 
 ## Examples
-Check out [examples.html](examples.html) in your browser, or spin up
-`examples.ipynb` in a Jupyter notebook.
+Check out [examples.ipynb](examples.ipynb) in your browser or spin it up on
+your computer in Jupyter notebook.
 
 ## Ideas for fun stuff to do
 * Speed and friction traces, dig around in the data
